@@ -7,9 +7,10 @@ import (
 
 // Hoster represents an hosting provider (aws or gce)
 type Hoster interface {
-	OnThisHoster(conf *config.CfiConfig) bool
-	Preempt(conf *config.CfiConfig) error
-	Status(conf *config.CfiConfig) (bool, error)
+	Init(conf *config.CfiConfig)
+	OnThisHoster() bool
+	Preempt() error
+	Status() bool
 }
 
 // Hosters holds all known Hoster

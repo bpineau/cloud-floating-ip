@@ -1,0 +1,19 @@
+package: github.com/bpineau/cloud-floating-ip
+import:
+- package: cloud.google.com/go
+  version: ^0.19.0
+  subpackages:
+  - compute/metadata
+- package: github.com/spf13/cobra
+  version: ^0.0.1
+- package: github.com/spf13/viper
+  version: ^1.0.0
+- package: golang.org/x/net
+  subpackages:
+  - context
+- package: golang.org/x/oauth2
+  subpackages:
+  - google
+- package: google.golang.org/api
+  subpackages:
+  - compute/v0.beta

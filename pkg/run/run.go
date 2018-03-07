@@ -10,6 +10,28 @@ import (
 
 // Run launchs the effective operations
 func Run(conf *config.CfiConfig, op operation.CfiOperation) {
-	_ = hoster.Hosters // noop
-	fmt.Printf("from run.go. Hoster: '%s'. Current op: %d\n", conf.Hoster, op)
+	var h hoster.Hoster
+
+	// XXX also, allow cli override with -o
+	for _, h = range hoster.Hosters {
+		if h.OnThisHoster() {
+			break
+		}
+	}
+	h.Init(conf)
+
+	if op == operation.CfiPreempt {
+		err := h.Preempt()
+		if err != nil {
+			fmt.Printf("Failed to preempt the IP: %v", err)
+		}
+	}
+
+	if op == operation.CfiStatus {
+		if h.Status() {
+			fmt.Println("owner")
+		} else {
+			fmt.Println("standby")
+		}
+	}
 }
