@@ -2,6 +2,7 @@ package run
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/bpineau/cloud-floating-ip/config"
 	"github.com/bpineau/cloud-floating-ip/pkg/hoster"
@@ -10,14 +11,12 @@ import (
 
 // Run launchs the effective operations
 func Run(conf *config.CfiConfig, op operation.CfiOperation) {
-	var h hoster.Hoster
 
-	// XXX also, allow cli override with -o
-	for _, h = range hoster.Hosters {
-		if h.OnThisHoster() {
-			break
-		}
+	h, err := hoster.GuessHoster(conf.Hoster)
+	if err != nil {
+		log.Fatalf("No hoster available: %v", err)
 	}
+
 	h.Init(conf)
 
 	if op == operation.CfiPreempt {

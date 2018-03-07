@@ -1,3 +1,4 @@
+// Package gce implement floating IP for GCE/GCP instances.
 // This will auth with the current instance's service account (if any).
 // Use GOOGLE_APPLICATION_CREDENTIALS environment variable to specify
 // a service account key file to authenticate to the API.
@@ -10,25 +11,25 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bpineau/cloud-floating-ip/config"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
 
 	"cloud.google.com/go/compute/metadata"
-	//"golang.org/x/oauth2/google"
-	//"google.golang.org/api/compute/v0.beta"
 )
 
 const (
 	instanceSelfLink = `https://www.googleapis.com/compute/v1/projects/%s/zones/%s/instances/%s`
+	routePrefix      = `cloud-floating-ip-rule-for-`
 )
 
 // Hoster represents an hosting provider (here, gce)
 type Hoster struct {
 	conf     *config.CfiConfig
-	network  string // XXX this should also be a cli option
-	rname    string // this too
+	network  string
+	rname    string
 	ctx      context.Context
 	selflink string
 	client   *http.Client
@@ -40,7 +41,10 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 	var err error
 	h.conf = conf
 
-	// XXX tester si pas ongce et qu'il manque une var: abort direct
+	err = h.checkMissingParam()
+	if err != nil {
+		log.Fatalf("Missing param: %v", err)
+	}
 
 	if h.conf.Project == "" {
 		h.conf.Project, err = metadata.ProjectID()
@@ -63,16 +67,9 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 		}
 	}
 
-	h.network, err = metadata.Get("instance/network-interfaces/0/network")
-	if err != nil {
-		log.Fatalf("Failed to guess network link: %v", err)
-	}
-
-	h.rname = strings.Replace("rule-for-"+h.conf.IP, ".", "-", -1)
-
+	h.rname = strings.Replace(routePrefix+h.conf.IP, ".", "-", -1)
 	h.selflink = fmt.Sprintf(instanceSelfLink, h.conf.Project, h.conf.Zone, h.conf.Instance)
-
-	h.ctx = context.Background()
+	h.ctx = context.Background() // XXX set a timeout
 
 	h.client, err = google.DefaultClient(h.ctx, compute.CloudPlatformScope)
 	if err != nil {
@@ -83,6 +80,22 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	h.network = h.getNetworkInterface()
+}
+
+func (h *Hoster) getNetworkInterface() string {
+	inst, err := h.svc.Instances.Get(h.conf.Project, h.conf.Zone, h.conf.Instance).Context(h.ctx).Do()
+	if err != nil {
+		log.Fatalf("Failed to guess network link: %v", err)
+	}
+
+	// XXX deal with instances with more than one interface
+	if len(inst.NetworkInterfaces) != 1 {
+		log.Fatal("For now, we don't support more than one interface")
+	}
+
+	return inst.NetworkInterfaces[0].Network
 }
 
 // OnThisHoster returns true when we run on an gce instance
@@ -92,7 +105,8 @@ func (h *Hoster) OnThisHoster() bool {
 
 // Preempt takes over the floating IP address
 func (h *Hoster) Preempt() error {
-	if h.Status() { // we're already primary/owner
+	// if we're already primary/owner, do nothing: we're idempotent.
+	if h.Status() {
 		return nil
 	}
 
@@ -103,12 +117,18 @@ func (h *Hoster) Preempt() error {
 		DestRange:       h.conf.IP,
 	}
 
-	// try to delete any possible pre-existing route, but don't obsess on it
-	_, _ = h.svc.Routes.Delete(h.conf.Project, h.rname).Context(h.ctx).Do()
+	// ther's no update: if a route by that name exists, we must delete it
+	resp, err := h.svc.Routes.Get(h.conf.Project, h.rname).Context(h.ctx).Do()
+	if err == nil && resp.Name != "" {
+		err = h.blockingWait(h.svc.Routes.Delete(h.conf.Project, h.rname).Do())
+		if err != nil {
+			fmt.Printf("Failed to delete an existing rule: %v\n", err)
+		}
+	}
 
-	_, err := h.svc.Routes.Insert(h.conf.Project, rb).Context(h.ctx).Do()
+	err = h.blockingWait(h.svc.Routes.Insert(h.conf.Project, rb).Do())
 	if err != nil {
-		log.Fatal("Failed to create the route: %v", err)
+		log.Fatalf("Failed to create the route: %v", err)
 	}
 
 	return nil
@@ -122,4 +142,42 @@ func (h *Hoster) Status() bool {
 	}
 
 	return resp.NextHopInstance == h.selflink
+}
+
+func (h *Hoster) checkMissingParam() error {
+	if h.OnThisHoster() {
+		return nil
+	}
+
+	if h.conf.Zone == "" || h.conf.Instance == "" || h.conf.Project == "" {
+		return fmt.Errorf("%s %s", "when not running this on a instance, ",
+			"you must provide project, zone and instance names")
+	}
+
+	return nil
+}
+
+func (h *Hoster) blockingWait(op *compute.Operation, err error) error {
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < 120; i++ {
+		operation, err := h.svc.GlobalOperations.Get(h.conf.Project, op.Name).Do()
+		if err != nil {
+			return err
+		}
+
+		if operation.Status == "DONE" {
+			return nil
+		}
+
+		if operation.Error != nil {
+			return fmt.Errorf("Operation failed: %v", operation.Error)
+		}
+
+		time.Sleep(time.Second)
+	}
+
+	return fmt.Errorf("timeout waiting for %s to finish", op.Name)
 }

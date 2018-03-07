@@ -1,6 +1,8 @@
 package hoster
 
 import (
+	"errors"
+
 	"github.com/bpineau/cloud-floating-ip/config"
 	"github.com/bpineau/cloud-floating-ip/pkg/hoster/gce"
 )
@@ -14,6 +16,27 @@ type Hoster interface {
 }
 
 // Hosters holds all known Hoster
-var Hosters = []Hoster{
-	&gce.Hoster{},
+var Hosters = map[string]Hoster{
+	"gce": &gce.Hoster{},
+}
+
+// GuessHoster returns the hoster described by name or found in instance's metadata
+func GuessHoster(name string) (Hoster, error) {
+	var h Hoster
+
+	if name != "" {
+		if host, ok := Hosters[name]; ok {
+			return host, nil
+		}
+
+		return nil, errors.New("hoster not supported: " + name)
+	}
+
+	for _, host := range Hosters {
+		if host.OnThisHoster() {
+			return h, nil
+		}
+	}
+
+	return nil, errors.New("failed to guess the current host's hoster (neither aws or gce?)")
 }
