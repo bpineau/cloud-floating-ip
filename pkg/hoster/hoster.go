@@ -32,8 +32,8 @@ func GuessHoster(name string) (Hoster, error) {
 		return nil, errors.New("hoster not supported: " + name)
 	}
 
-	for _, host := range Hosters {
-		if host.OnThisHoster() {
+	for _, h = range Hosters {
+		if h.OnThisHoster() {
 			return h, nil
 		}
 	}
