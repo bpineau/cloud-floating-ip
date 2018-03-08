@@ -14,10 +14,11 @@ import (
 	"time"
 
 	"github.com/bpineau/cloud-floating-ip/config"
-	"golang.org/x/oauth2/google"
-	compute "google.golang.org/api/compute/v1"
 
 	"cloud.google.com/go/compute/metadata"
+	"golang.org/x/oauth2/google"
+	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 )
 
 const (
@@ -117,12 +118,17 @@ func (h *Hoster) Preempt() error {
 		DestRange:       h.conf.IP,
 	}
 
-	// ther's no update: if a route by that name exists, we must delete it
-	resp, err := h.svc.Routes.Get(h.conf.Project, h.rname).Context(h.ctx).Do()
-	if err == nil && resp.Name != "" {
-		err = h.blockingWait(h.svc.Routes.Delete(h.conf.Project, h.rname).Do())
-		if err != nil {
-			fmt.Printf("Failed to delete an existing rule: %v\n", err)
+	// the api don't offer updates: if something already exists, delete it
+	err := h.blockingWait(h.svc.Routes.Delete(h.conf.Project, h.rname).Do())
+	if err != nil {
+		apierr, ok := err.(*googleapi.Error)
+
+		if !ok {
+			log.Fatalf("Failed to delete existing route and read error: %v", err)
+		}
+
+		if apierr.Code != 404 {
+			log.Fatalf("Failed to delete an existing rule: %v\n", err)
 		}
 	}
 
@@ -137,11 +143,21 @@ func (h *Hoster) Preempt() error {
 // Status returns true if the floating IP address route to the instance
 func (h *Hoster) Status() bool {
 	resp, err := h.svc.Routes.Get(h.conf.Project, h.rname).Context(h.ctx).Do()
-	if err != nil {
-		log.Fatal(err)
+
+	if err == nil {
+		return resp.NextHopInstance == h.selflink
 	}
 
-	return resp.NextHopInstance == h.selflink
+	// route not found is ok, means we don't "own" the IP
+	if apierr, ok := err.(*googleapi.Error); ok {
+		if apierr.Code == 404 {
+			return false
+		}
+	}
+
+	log.Fatalf("Failed to get route status: %v", err)
+
+	return false
 }
 
 func (h *Hoster) checkMissingParam() error {
