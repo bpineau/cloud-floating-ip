@@ -27,13 +27,13 @@ func Run(conf *config.CfiConfig, op operation.CfiOperation) {
 		err = h.Destroy()
 	case operation.CfiStatus:
 		if h.Status() {
-			fmt.Println("owner")
+			fmt.Println("primary")
 		} else {
 			fmt.Println("standby")
 		}
 	}
 
 	if err != nil {
-		log.Fatalf("Failed to purge the routes: %v", err)
+		log.Fatal(err)
 	}
 }

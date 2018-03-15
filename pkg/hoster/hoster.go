@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/bpineau/cloud-floating-ip/config"
+	"github.com/bpineau/cloud-floating-ip/pkg/hoster/aws"
 	"github.com/bpineau/cloud-floating-ip/pkg/hoster/gce"
 )
 
@@ -18,6 +19,7 @@ type Hoster interface {
 
 // Hosters holds all known Hoster
 var Hosters = map[string]Hoster{
+	"aws": &aws.Hoster{},
 	"gce": &gce.Hoster{},
 }
 

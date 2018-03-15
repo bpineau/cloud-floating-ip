@@ -17,3 +17,5 @@ import:
 - package: google.golang.org/api
   subpackages:
   - compute/v0.beta
+- package: github.com/aws/aws-sdk-go
+  version: ^1.13.11
