@@ -1,9 +1,9 @@
-// Package gce implement floating IP for GCE/GCP instances.
-
 // This will auth using the current instance's service account (if any).
 // Or you can use GOOGLE_APPLICATION_CREDENTIALS environment variable
-// to specify a service account key file to authenticate to the API.
+// to specify a json service account key file to authenticate to the API.
 // See https://cloud.google.com/docs/authentication/.
+
+// Package gce implement floating IP for GCE/GCP instances.
 package gce
 
 import (
@@ -93,7 +93,7 @@ func (h *Hoster) getNetworkInterface() string {
 		log.Fatalf("Failed to guess network link: %v", err)
 	}
 
-	// XXX deal with instances with more than one interface
+	// TODO: support instances with several interfaces
 	if len(inst.NetworkInterfaces) != 1 {
 		log.Fatal("For now, we don't support more than one interface")
 	}
@@ -108,9 +108,15 @@ func (h *Hoster) OnThisHoster() bool {
 
 // Preempt takes over the floating IP address
 func (h *Hoster) Preempt() error {
-	// if we're already primary/owner, do nothing: we're idempotent.
 	if h.Status() {
+		if !h.conf.Quiet {
+			fmt.Printf("Already primary, nothing to do\n")
+		}
 		return nil
+	}
+
+	if !h.conf.Quiet {
+		fmt.Printf("Preempting %s route(s)\n", h.conf.IP)
 	}
 
 	rb := &compute.Route{
@@ -124,6 +130,15 @@ func (h *Hoster) Preempt() error {
 	err := h.Destroy()
 	if err != nil {
 		log.Fatalf("Failed to delete the route: %v", err)
+	}
+
+	if !h.conf.Quiet {
+		fmt.Printf("Creating a route %s to %s via %s on %s network\n",
+			h.rname, h.conf.IP, h.selflink, h.network)
+	}
+
+	if h.conf.DryRun {
+		return nil
 	}
 
 	err = h.blockingWait(h.svc.Routes.Insert(h.conf.Project, rb).Do())
@@ -154,7 +169,17 @@ func (h *Hoster) Status() bool {
 	return false
 }
 
+// Destroy remove route to the IP from our VPC
 func (h *Hoster) Destroy() error {
+	if !h.conf.Quiet {
+		fmt.Printf("Deleting route to %s from %s network\n",
+			h.conf.IP, h.network)
+	}
+
+	if h.conf.DryRun {
+		return nil
+	}
+
 	err := h.blockingWait(h.svc.Routes.Delete(h.conf.Project, h.rname).Do())
 	if err == nil {
 		return nil
@@ -163,11 +188,11 @@ func (h *Hoster) Destroy() error {
 	apierr, ok := err.(*googleapi.Error)
 
 	if !ok {
-		return fmt.Errorf("Failed to delete a route and read error: %v", err)
+		return fmt.Errorf("failed to delete a route and read error: %v", err)
 	}
 
 	if apierr.Code != 404 {
-		return fmt.Errorf("Failed to delete an existing route: %v\n", err)
+		return fmt.Errorf("failed to delete an existing route: %v", err)
 	}
 
 	return nil

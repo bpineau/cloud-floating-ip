@@ -22,7 +22,9 @@ var (
 	dryrun   bool
 	quiet    bool
 	project  string
+	region   string
 	zone     string
+	nomain   bool
 	accessk  string
 	secretk  string
 )
@@ -35,7 +37,9 @@ func newCfiConfig() *config.CfiConfig {
 		DryRun:        viper.GetBool("dry-run"),
 		Quiet:         viper.GetBool("quiet"),
 		Project:       viper.GetString("project"),
+		Region:        viper.GetString("region"),
 		Zone:          viper.GetString("zone"),
+		NoMain:        viper.GetBool("ignore-main-table"),
 		AwsAccesKeyID: viper.GetString("aws-access-key-id"),
 		AwsSecretKey:  viper.GetString("aws-secret-key"),
 	}
@@ -56,8 +60,8 @@ var rootCmd = &cobra.Command{
 	Use:   "cloud-floating-ip",
 	Short: "Implement a floating IP by modifying GCE or AWS routes.",
 	Long: `Implement a floating IP by modifying GCE or AWS routes.
-Most of the arguments (except the floating IP address) can be guessed from
-instance's metadata (when running from an AWS or GCE instance).
+The --ip argument is mandatory. Other settings can be guessed from
+instance's metadata when running from an AWS or GCE instance.
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		run.Run(newCfiConfig(), operation.CfiStatus)
@@ -100,17 +104,23 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "quiet mode")
 	bindPFlag("quiet", "quiet")
 
-	rootCmd.PersistentFlags().StringVarP(&project, "project", "p", "", "GCP project id")
+	rootCmd.PersistentFlags().StringVarP(&project, "project", "p", "", "(GCP) project id")
 	bindPFlag("project", "project")
 
-	rootCmd.PersistentFlags().StringVarP(&zone, "zone", "z", "", "zone name")
+	rootCmd.PersistentFlags().StringVarP(&region, "region", "r", "", "(AWS) region name")
+	bindPFlag("region", "region")
+
+	rootCmd.PersistentFlags().StringVarP(&zone, "zone", "z", "", "(GCP) zone name")
 	bindPFlag("zone", "zone")
 
-	rootCmd.PersistentFlags().StringVarP(&accessk, "aws-access-key-id", "a", "", "AWS access key Id")
-	bindPFlag("accessk", "accessk")
+	rootCmd.PersistentFlags().BoolVarP(&nomain, "ignore-main-table", "m", false, "(AWS) ignore routes in main table")
+	bindPFlag("ignore-main-table", "ignore-main-table")
 
-	rootCmd.PersistentFlags().StringVarP(&secretk, "aws-secret-key", "k", "", "AWS secret key")
-	bindPFlag("secretk", "secretk")
+	rootCmd.PersistentFlags().StringVarP(&accessk, "aws-access-key-id", "a", "", "(AWS) access key Id")
+	bindPFlag("aws-access-key-id", "aws-access-key-id")
+
+	rootCmd.PersistentFlags().StringVarP(&secretk, "aws-secret-key", "k", "", "(AWS) secret key")
+	bindPFlag("aws-secret-key", "aws-secret-key")
 }
 
 // initConfig reads in config file and ENV variables if set.

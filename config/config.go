@@ -23,6 +23,12 @@ type CfiConfig struct {
 	// Zone is the AWS or GCP zone of the target instance
 	Zone string
 
+	// Region is the AWS region
+	Region string
+
+	// Ignore tables associated with the main route table
+	NoMain bool
+
 	// AwsAccesKeyID (AWS only) is the acccess key to use (if we don't use an instance profile's role)
 	AwsAccesKeyID string
 
