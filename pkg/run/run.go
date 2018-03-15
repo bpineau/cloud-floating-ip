@@ -11,26 +11,29 @@ import (
 
 // Run launchs the effective operations
 func Run(conf *config.CfiConfig, op operation.CfiOperation) {
+	var err error
 
 	h, err := hoster.GuessHoster(conf.Hoster)
 	if err != nil {
-		log.Fatalf("No hoster available: %v", err)
+		log.Fatalf("Can't guess hoster, please specify '-o' option: %v", err)
 	}
 
 	h.Init(conf)
 
-	if op == operation.CfiPreempt {
-		err := h.Preempt()
-		if err != nil {
-			fmt.Printf("Failed to preempt the IP: %v", err)
-		}
-	}
-
-	if op == operation.CfiStatus {
+	switch op {
+	case operation.CfiPreempt:
+		err = h.Preempt()
+	case operation.CfiDestroy:
+		err = h.Destroy()
+	case operation.CfiStatus:
 		if h.Status() {
 			fmt.Println("owner")
 		} else {
 			fmt.Println("standby")
 		}
+	}
+
+	if err != nil {
+		log.Fatalf("Failed to purge the routes: %v", err)
 	}
 }

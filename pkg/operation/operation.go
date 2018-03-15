@@ -9,4 +9,7 @@ const (
 
 	// CfiPreempt represents a call to Preempt() (to take over IP address)
 	CfiPreempt
+
+	// CfiDestroy purges all routes we've created
+	CfiDestroy
 )

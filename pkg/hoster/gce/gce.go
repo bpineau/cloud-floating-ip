@@ -1,7 +1,8 @@
 // Package gce implement floating IP for GCE/GCP instances.
-// This will auth with the current instance's service account (if any).
-// Use GOOGLE_APPLICATION_CREDENTIALS environment variable to specify
-// a service account key file to authenticate to the API.
+
+// This will auth using the current instance's service account (if any).
+// Or you can use GOOGLE_APPLICATION_CREDENTIALS environment variable
+// to specify a service account key file to authenticate to the API.
 // See https://cloud.google.com/docs/authentication/.
 package gce
 
@@ -29,17 +30,18 @@ const (
 // Hoster represents an hosting provider (here, gce)
 type Hoster struct {
 	conf     *config.CfiConfig
-	network  string
-	rname    string
-	ctx      context.Context
-	selflink string
 	client   *http.Client
 	svc      *compute.Service
+	ctx      *context.Context
+	network  string
+	rname    string
+	selflink string
 }
 
 // Init prepare a gce hoster for usage
 func (h *Hoster) Init(conf *config.CfiConfig) {
 	var err error
+	ctx := context.Background()
 	h.conf = conf
 
 	err = h.checkMissingParam()
@@ -70,9 +72,9 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 
 	h.rname = strings.Replace(routePrefix+h.conf.IP, ".", "-", -1)
 	h.selflink = fmt.Sprintf(instanceSelfLink, h.conf.Project, h.conf.Zone, h.conf.Instance)
-	h.ctx = context.Background() // XXX set a timeout
+	h.ctx = &ctx
 
-	h.client, err = google.DefaultClient(h.ctx, compute.CloudPlatformScope)
+	h.client, err = google.DefaultClient(*h.ctx, compute.CloudPlatformScope)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -86,7 +88,7 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 }
 
 func (h *Hoster) getNetworkInterface() string {
-	inst, err := h.svc.Instances.Get(h.conf.Project, h.conf.Zone, h.conf.Instance).Context(h.ctx).Do()
+	inst, err := h.svc.Instances.Get(h.conf.Project, h.conf.Zone, h.conf.Instance).Context(*h.ctx).Do()
 	if err != nil {
 		log.Fatalf("Failed to guess network link: %v", err)
 	}
@@ -118,18 +120,10 @@ func (h *Hoster) Preempt() error {
 		DestRange:       h.conf.IP,
 	}
 
-	// the api don't offer updates: if something already exists, delete it
-	err := h.blockingWait(h.svc.Routes.Delete(h.conf.Project, h.rname).Do())
+	// There's no "update" or "replace" in GCP routes API.
+	err := h.Destroy()
 	if err != nil {
-		apierr, ok := err.(*googleapi.Error)
-
-		if !ok {
-			log.Fatalf("Failed to delete existing route and read error: %v", err)
-		}
-
-		if apierr.Code != 404 {
-			log.Fatalf("Failed to delete an existing rule: %v\n", err)
-		}
+		log.Fatalf("Failed to delete the route: %v", err)
 	}
 
 	err = h.blockingWait(h.svc.Routes.Insert(h.conf.Project, rb).Do())
@@ -142,7 +136,7 @@ func (h *Hoster) Preempt() error {
 
 // Status returns true if the floating IP address route to the instance
 func (h *Hoster) Status() bool {
-	resp, err := h.svc.Routes.Get(h.conf.Project, h.rname).Context(h.ctx).Do()
+	resp, err := h.svc.Routes.Get(h.conf.Project, h.rname).Context(*h.ctx).Do()
 
 	if err == nil {
 		return resp.NextHopInstance == h.selflink
@@ -158,6 +152,25 @@ func (h *Hoster) Status() bool {
 	log.Fatalf("Failed to get route status: %v", err)
 
 	return false
+}
+
+func (h *Hoster) Destroy() error {
+	err := h.blockingWait(h.svc.Routes.Delete(h.conf.Project, h.rname).Do())
+	if err == nil {
+		return nil
+	}
+
+	apierr, ok := err.(*googleapi.Error)
+
+	if !ok {
+		return fmt.Errorf("Failed to delete a route and read error: %v", err)
+	}
+
+	if apierr.Code != 404 {
+		return fmt.Errorf("Failed to delete an existing route: %v\n", err)
+	}
+
+	return nil
 }
 
 func (h *Hoster) checkMissingParam() error {

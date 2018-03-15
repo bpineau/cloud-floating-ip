@@ -13,6 +13,7 @@ type Hoster interface {
 	OnThisHoster() bool
 	Preempt() error
 	Status() bool
+	Destroy() error
 }
 
 // Hosters holds all known Hoster
