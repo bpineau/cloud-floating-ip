@@ -34,20 +34,18 @@ const (
 
 // Init prepare an aws hoster for usage
 func (h *Hoster) Init(conf *config.CfiConfig) {
+	h.conf = conf
 	err := h.checkMissingParam()
 	if err != nil {
 		log.Fatalf("Missing param: %v", err)
 	}
 
-	sess, err := session.NewSession(aws.NewConfig().WithMaxRetries(3))
+	h.sess, err = session.NewSession(aws.NewConfig().WithMaxRetries(3))
 	if err != nil {
 		log.Fatalf("Failed to initialize an AWS session: %v", err)
 	}
 
-	h.conf = conf
-	h.sess = sess
-
-	metadata := ec2metadata.New(sess)
+	metadata := ec2metadata.New(h.sess)
 
 	if h.conf.Region == "" {
 		h.conf.Region, err = metadata.Region()
@@ -65,7 +63,7 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 		}
 	}
 
-	h.ec2s = ec2.New(sess)
+	h.ec2s = ec2.New(h.sess)
 
 	err = h.getNetworkInfo()
 	if err != nil {
