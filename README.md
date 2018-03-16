@@ -14,6 +14,7 @@ be assigned to a loopback or a dummy interface on all instances:
 ```bash
 ip link add dummy0 type dummy
 ip address add 10.200.0.50/32 dev dummy0
+ip link set dev dummy0 up
 ```
 
 To route the floating IP to the current instance (becomes "primary"):
@@ -32,6 +33,15 @@ To verify the status ("primary" or "standby") of any instance:
 ```bash
 cloud-floating-ip -i 10.200.0.50 status
 ```
+
+When `cloud-floating-ip` runs on the target instance, most settings (region,
+instance id, cloud provider, ...) can be guessed from the instance metadata.
+
+To act on a remote instance, we must be more explicit :
+```bash
+cloud-floating-ip -o aws -i 10.200.0.50 -t i-0e3f4ac17545ce580 -r eu-west-1 status
+cloud-floating-ip -o aws -i 10.200.0.50 -t i-0e3f4ac17545ce580 -r eu-west-1 preempt
+````
 
 To store the configuration (and get rid of repetitive `-i ...` arguments):
 ```bash
@@ -104,4 +114,5 @@ container.operations.list
 
 * `cloud-floating-ip` does not support instances with multiple interfaces in the VPC yet.
 * On GCE, `cloud-floating-ip` won't remove already created, pre-existing routes with a custom name
+* IPv4 only, for now
 
