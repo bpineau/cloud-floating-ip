@@ -1,23 +1,31 @@
 # cloud-floating-ip
 
-Implement a floating/virtual IP by modifying GCP or AWS routes.
+Implement a floating/virtual IP by configuring cloud provider's routes.
+
+Choose an arbitrary private IP address, and `cloud-floating-ip` will
+route traffic for that IP to the AWS or GCP instance of your choice.
 
 ## Usage
 
-All EC2/GCE instances that may carry the floating IP (become "primary")
-should be allowed to route traffic: `SourceDestCheck` (EC2) or `canIpForward`
-(GCE) must be enabled.
+Choosing the virtual IP: this address must not be already used in the
+VPC; it doesn't have to be part of an existing subnet range.
 
-Those instances should accept the traffic to the floating IP, which may
-be assigned to a loopback or a dummy interface on all instances:
+All EC2/GCE instances that may become "primary" (carry the floating IP)
+at some point should be allowed by the cloud provider to route traffic
+(`SourceDestCheck` (EC2) or `canIpForward` (GCE) must be enabled).
+
+Those instances should be able to accept traffic to the floating IP.
+To that effect, we can assign the address to a loopback or a dummy
+interface on all instances:
 
 ```bash
+# we can do that on all instances
 ip link add dummy0 type dummy
 ip address add 10.200.0.50/32 dev dummy0
 ip link set dev dummy0 up
 ```
 
-To route the floating IP to the current instance (becomes "primary"):
+To route the floating IP through the current instance:
 ```bash
 # see what would change
 cloud-floating-ip -i 10.200.0.50 preempt --dry-run
@@ -26,7 +34,7 @@ cloud-floating-ip -i 10.200.0.50 preempt --dry-run
 cloud-floating-ip -i 10.200.0.50 preempt
 ```
 
-The IP can be preempted by other instances in the VP, by using the same
+The IP can be preempted by other instances in the VPC, by using the same
 `preempt` command.
 
 To verify the status ("primary" or "standby") of any instance:
@@ -55,11 +63,11 @@ EOF
 
 The `ip` argument is mandatory. Other settings can be collected from
 instance's metadata (and instance profile or service account) when
-running from an AWS or GCE instance.
+running `cloud-floating-ip` from an AWS or GCE instance.
 
 Those settings can be stored in the `/etc/cloud-floating-ip.yaml`
-configuration file. Or pass them through environments (upper case,
-prefixed by `CFI_`).
+configuration file. You can also pass them through environments (upper
+case, prefixed by `CFI_`).
 
 
 ```
