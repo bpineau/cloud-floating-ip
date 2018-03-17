@@ -9,12 +9,12 @@ package gce
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/bpineau/cloud-floating-ip/config"
+	"github.com/bpineau/cloud-floating-ip/pkg/log"
 
 	"cloud.google.com/go/compute/metadata"
 	"golang.org/x/oauth2/google"
@@ -33,40 +33,42 @@ type Hoster struct {
 	client   *http.Client
 	svc      *compute.Service
 	ctx      *context.Context
+	log      log.Logger
 	network  string
 	rname    string
 	selflink string
 }
 
 // Init prepare a gce hoster for usage
-func (h *Hoster) Init(conf *config.CfiConfig) {
+func (h *Hoster) Init(conf *config.CfiConfig, logger log.Logger) {
 	var err error
 	ctx := context.Background()
 	h.conf = conf
+	h.log = logger
 
 	err = h.checkMissingParam()
 	if err != nil {
-		log.Fatalf("Missing param: %v", err)
+		h.log.Fatalf("Missing param: %v\n", err)
 	}
 
 	if h.conf.Project == "" {
 		h.conf.Project, err = metadata.ProjectID()
 		if err != nil {
-			log.Fatalf("Failed to guess project id: %v", err)
+			h.log.Fatalf("Failed to guess project id: %v\n", err)
 		}
 	}
 
 	if h.conf.Instance == "" {
 		h.conf.Instance, err = metadata.InstanceName()
 		if err != nil {
-			log.Fatalf("Failed to guess instance id: %v", err)
+			h.log.Fatalf("Failed to guess instance id: %v", err)
 		}
 	}
 
 	if h.conf.Zone == "" {
 		h.conf.Zone, err = metadata.Zone()
 		if err != nil {
-			log.Fatalf("Failed to guess instance zone: %v", err)
+			h.log.Fatalf("Failed to guess instance zone: %v", err)
 		}
 	}
 
@@ -76,12 +78,12 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 
 	h.client, err = google.DefaultClient(*h.ctx, compute.CloudPlatformScope)
 	if err != nil {
-		log.Fatal(err)
+		h.log.Fatalf("Failed to get default client %s", err)
 	}
 
 	h.svc, err = compute.New(h.client)
 	if err != nil {
-		log.Fatal(err)
+		h.log.Fatalf("Failed to instantiate a compute client: %s", err)
 	}
 
 	h.network = h.getNetworkInterface()
@@ -90,12 +92,12 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 func (h *Hoster) getNetworkInterface() string {
 	inst, err := h.svc.Instances.Get(h.conf.Project, h.conf.Zone, h.conf.Instance).Context(*h.ctx).Do()
 	if err != nil {
-		log.Fatalf("Failed to guess network link: %v", err)
+		h.log.Fatalf("Failed to guess network link: %v", err)
 	}
 
 	// TODO: support instances with several interfaces
 	if len(inst.NetworkInterfaces) != 1 {
-		log.Fatal("For now, we don't support more than one interface")
+		h.log.Fatalf("For now, we don't support more than one interface")
 	}
 
 	return inst.NetworkInterfaces[0].Network
@@ -109,15 +111,11 @@ func (h *Hoster) OnThisHoster() bool {
 // Preempt takes over the floating IP address
 func (h *Hoster) Preempt() error {
 	if h.Status() {
-		if !h.conf.Quiet {
-			fmt.Printf("Already primary, nothing to do\n")
-		}
+		h.log.Infof("Already primary, nothing to do\n")
 		return nil
 	}
 
-	if !h.conf.Quiet {
-		fmt.Printf("Preempting %s route(s)\n", h.conf.IP)
-	}
+	h.log.Infof("Preempting %s route(s)\n", h.conf.IP)
 
 	rb := &compute.Route{
 		Name:            h.rname,
@@ -129,13 +127,11 @@ func (h *Hoster) Preempt() error {
 	// There's no "update" or "replace" in GCP routes API.
 	err := h.Destroy()
 	if err != nil {
-		log.Fatalf("Failed to delete the route: %v", err)
+		h.log.Fatalf("Failed to delete the route: %v", err)
 	}
 
-	if !h.conf.Quiet {
-		fmt.Printf("Creating a route %s to %s via %s on %s network\n",
-			h.rname, h.conf.IP, h.selflink, h.network)
-	}
+	h.log.Infof("Creating a route %s to %s via %s on %s network\n",
+		h.rname, h.conf.IP, h.selflink, h.network)
 
 	if h.conf.DryRun {
 		return nil
@@ -143,7 +139,7 @@ func (h *Hoster) Preempt() error {
 
 	err = h.blockingWait(h.svc.Routes.Insert(h.conf.Project, rb).Do())
 	if err != nil {
-		log.Fatalf("Failed to create the route: %v", err)
+		h.log.Fatalf("Failed to create the route: %v", err)
 	}
 
 	return nil
@@ -164,17 +160,14 @@ func (h *Hoster) Status() bool {
 		}
 	}
 
-	log.Fatalf("Failed to get route status: %v", err)
+	h.log.Fatalf("Failed to get route status: %v", err)
 
 	return false
 }
 
 // Destroy remove route to the IP from our VPC
 func (h *Hoster) Destroy() error {
-	if !h.conf.Quiet {
-		fmt.Printf("Deleting route to %s from %s network\n",
-			h.conf.IP, h.network)
-	}
+	h.log.Infof("Deleting route to %s from %s network\n", h.conf.IP, h.network)
 
 	if h.conf.DryRun {
 		return nil

@@ -6,11 +6,12 @@ import (
 	"github.com/bpineau/cloud-floating-ip/config"
 	"github.com/bpineau/cloud-floating-ip/pkg/hoster/aws"
 	"github.com/bpineau/cloud-floating-ip/pkg/hoster/gce"
+	"github.com/bpineau/cloud-floating-ip/pkg/log"
 )
 
 // Hoster represents an hosting provider (aws or gce)
 type Hoster interface {
-	Init(conf *config.CfiConfig)
+	Init(conf *config.CfiConfig, logger log.Logger)
 	OnThisHoster() bool
 	Preempt() error
 	Status() bool

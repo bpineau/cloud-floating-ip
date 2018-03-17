@@ -2,9 +2,9 @@ package aws
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/bpineau/cloud-floating-ip/config"
+	"github.com/bpineau/cloud-floating-ip/pkg/log"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
@@ -18,6 +18,7 @@ type Hoster struct {
 	sess   *session.Session
 	ec2s   *ec2.EC2
 	routes []*ec2.RouteTable
+	log    log.Logger
 	enid   *string
 	cidr   *string
 	vpc    string
@@ -33,16 +34,17 @@ const (
 )
 
 // Init prepare an aws hoster for usage
-func (h *Hoster) Init(conf *config.CfiConfig) {
+func (h *Hoster) Init(conf *config.CfiConfig, logger log.Logger) {
 	h.conf = conf
+	h.log = logger
 	err := h.checkMissingParam()
 	if err != nil {
-		log.Fatalf("Missing param: %v", err)
+		h.log.Fatalf("Missing param: %v", err)
 	}
 
 	h.sess, err = session.NewSession(aws.NewConfig().WithMaxRetries(3))
 	if err != nil {
-		log.Fatalf("Failed to initialize an AWS session: %v", err)
+		h.log.Fatalf("Failed to initialize an AWS session: %v", err)
 	}
 
 	metadata := ec2metadata.New(h.sess)
@@ -50,7 +52,7 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 	if h.conf.Region == "" {
 		h.conf.Region, err = metadata.Region()
 		if err != nil {
-			log.Fatalf("Failed to collect region from instance metadata: %v", err)
+			h.log.Fatalf("Failed to collect region from instance metadata: %v", err)
 		}
 	}
 
@@ -59,7 +61,7 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 	if h.conf.Instance == "" {
 		h.conf.Instance, err = metadata.GetMetadata("instance-id")
 		if err != nil {
-			log.Fatalf("Failed to collect instanceid from instance metadata: %v", err)
+			h.log.Fatalf("Failed to collect instanceid from instance metadata: %v", err)
 		}
 	}
 
@@ -67,7 +69,7 @@ func (h *Hoster) Init(conf *config.CfiConfig) {
 
 	err = h.getNetworkInfo()
 	if err != nil {
-		log.Fatalf("Failed to collect network infos: %v", err)
+		h.log.Fatalf("Failed to collect network infos: %v", err)
 	}
 }
 
@@ -127,15 +129,11 @@ func (h *Hoster) OnThisHoster() bool {
 // Preempt takes over the floating IP address
 func (h *Hoster) Preempt() error {
 	if h.Status() {
-		if !h.conf.Quiet {
-			fmt.Printf("Already primary, nothing to do\n")
-		}
+		h.log.Infof("Already primary, nothing to do\n")
 		return nil
 	}
 
-	if !h.conf.Quiet {
-		fmt.Printf("Preempting %s route(s)\n", h.conf.IP)
-	}
+	h.log.Infof("Preempting %s route(s)\n", h.conf.IP)
 
 	// contrary to GCE, an EC2 VPC can have several routes tables
 	for _, table := range h.routes {
@@ -157,7 +155,7 @@ func (h *Hoster) Preempt() error {
 		}
 
 		if err != nil {
-			log.Fatalf("Failed to create a route: %v", err)
+			h.log.Fatalf("Failed to create a route: %v", err)
 		}
 	}
 
@@ -196,10 +194,8 @@ func (h *Hoster) Destroy() error {
 			DestinationCidrBlock: h.cidr,
 		}
 
-		if !h.conf.Quiet {
-			fmt.Printf("Deleting route to %s from %s table\n",
-				*h.cidr, *table.RouteTableId)
-		}
+		h.log.Infof("Deleting route to %s from %s table\n",
+			*h.cidr, *table.RouteTableId)
 
 		if h.conf.DryRun {
 			continue
@@ -267,10 +263,8 @@ func (h *Hoster) addRouteInTable(table *ec2.RouteTable, cidr *string, eni *strin
 		NetworkInterfaceId:   eni,
 	}
 
-	if !h.conf.Quiet {
-		fmt.Printf("Creating route to %s via ENI %s in table %s\n",
-			*cidr, *eni, *table.RouteTableId)
-	}
+	h.log.Infof("Creating route to %s via ENI %s in table %s\n",
+		*cidr, *eni, *table.RouteTableId)
 
 	if h.conf.DryRun {
 		return nil
@@ -287,10 +281,8 @@ func (h *Hoster) replaceRouteInTable(table *ec2.RouteTable, cidr *string, eni *s
 		NetworkInterfaceId:   eni,
 	}
 
-	if !h.conf.Quiet {
-		fmt.Printf("Replacing route to %s via ENI %s in table %s\n",
-			*cidr, *eni, *table.RouteTableId)
-	}
+	h.log.Infof("Replacing route to %s via ENI %s in table %s\n",
+		*cidr, *eni, *table.RouteTableId)
 
 	if h.conf.DryRun {
 		return nil
