@@ -44,8 +44,8 @@ cloud-floating-ip -i 10.200.0.50 status
 
 When `cloud-floating-ip` runs on the target instance, most settings (region,
 instance id, cloud provider, ...) can be guessed from the instance metadata.
-
 To act on a remote instance, we must be more explicit :
+
 ```bash
 cloud-floating-ip -o aws -i 10.200.0.50 -t i-0e3f4ac17545ce580 -r eu-west-1 status
 cloud-floating-ip -o aws -i 10.200.0.50 -t i-0e3f4ac17545ce580 -r eu-west-1 preempt

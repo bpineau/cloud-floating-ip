@@ -2,10 +2,10 @@ package run
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/bpineau/cloud-floating-ip/config"
 	"github.com/bpineau/cloud-floating-ip/pkg/hoster"
+	"github.com/bpineau/cloud-floating-ip/pkg/log/console"
 	"github.com/bpineau/cloud-floating-ip/pkg/operation"
 )
 
@@ -13,12 +13,14 @@ import (
 func Run(conf *config.CfiConfig, op operation.CfiOperation) {
 	var err error
 
+	log := &console.Logger{Quiet: conf.Quiet}
+
 	h, err := hoster.GuessHoster(conf.Hoster)
 	if err != nil {
 		log.Fatalf("Can't guess hoster, please specify '-o' option: %v", err)
 	}
 
-	h.Init(conf)
+	h.Init(conf, log)
 
 	switch op {
 	case operation.CfiPreempt:
