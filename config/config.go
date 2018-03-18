@@ -29,6 +29,15 @@ type CfiConfig struct {
 	// Ignore tables associated with the main route table
 	NoMain bool
 
+	// Interface ID
+	Iface string
+
+	// Subnet ID
+	Subnet string
+
+	// Target private IP
+	TargetIP string
+
 	// AwsAccesKeyID (AWS only) is the acccess key to use (if we don't use an instance profile's role)
 	AwsAccesKeyID string
 
