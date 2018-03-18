@@ -30,6 +30,7 @@ var (
 	iface    string
 	subnet   string
 	targetip string
+	tables   []string
 )
 
 func newCfiConfig() *config.CfiConfig {
@@ -46,6 +47,7 @@ func newCfiConfig() *config.CfiConfig {
 		Iface:         viper.GetString("interface"),
 		Subnet:        viper.GetString("subnet"),
 		TargetIP:      viper.GetString("target-ip"),
+		RouteTables:   viper.GetStringSlice("table"),
 		AwsAccesKeyID: viper.GetString("aws-access-key-id"),
 		AwsSecretKey:  viper.GetString("aws-secret-key"),
 	}
@@ -122,14 +124,17 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&nomain, "ignore-main-table", "m", false, "(AWS) ignore routes in main table")
 	bindPFlag("ignore-main-table", "ignore-main-table")
 
-	rootCmd.PersistentFlags().StringVarP(&iface, "interface", "f", "", "Network interface ID")
+	rootCmd.PersistentFlags().StringVarP(&iface, "interface", "f", "", "network interface ID")
 	bindPFlag("interface", "interface")
 
-	rootCmd.PersistentFlags().StringVarP(&subnet, "subnet", "s", "", "Subnet ID")
+	rootCmd.PersistentFlags().StringVarP(&subnet, "subnet", "s", "", "subnet ID")
 	bindPFlag("subnet", "subnet")
 
-	rootCmd.PersistentFlags().StringVarP(&targetip, "target-ip", "g", "", "Target private IP")
+	rootCmd.PersistentFlags().StringVarP(&targetip, "target-ip", "g", "", "target private IP")
 	bindPFlag("target-ip", "target-ip")
+
+	rootCmd.PersistentFlags().StringSliceVarP(&tables, "table", "b", nil, "(AWS) only consider this route table (may be specified several times)")
+	bindPFlag("table", "table")
 
 	rootCmd.PersistentFlags().StringVarP(&accessk, "aws-access-key-id", "a", "", "(AWS) access key Id")
 	bindPFlag("aws-access-key-id", "aws-access-key-id")

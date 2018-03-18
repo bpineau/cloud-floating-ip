@@ -111,13 +111,14 @@ Flags:
   -h, --help                       help for cloud-floating-ip
   -o, --hoster string              hosting provider (aws or gce)
   -t, --instance string            instance name
-  -f, --interface string           Network interface ID
-  -s, --subnet string              Subnet ID
-  -g, --target-ip string           Target private IP
+  -f, --interface string           network interface ID
+  -s, --subnet string              subnet ID
+  -g, --target-ip string           target private IP
   -m, --ignore-main-table          (AWS) ignore routes in main table
   -a, --aws-access-key-id string   (AWS) access key Id
   -k, --aws-secret-key string      (AWS) secret key
   -r, --region string              (AWS) region name
+  -b, --table strings              (AWS) only consider this route table (may be specified several times)
   -p, --project string             (GCP) project id
   -z, --zone string                (GCP) zone name
 ```

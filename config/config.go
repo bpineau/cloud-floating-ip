@@ -38,6 +38,9 @@ type CfiConfig struct {
 	// Target private IP
 	TargetIP string
 
+	// Restricted set of AWS route tables
+	RouteTables []string
+
 	// AwsAccesKeyID (AWS only) is the acccess key to use (if we don't use an instance profile's role)
 	AwsAccesKeyID string
 
