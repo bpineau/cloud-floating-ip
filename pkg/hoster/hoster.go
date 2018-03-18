@@ -18,8 +18,7 @@ type Hoster interface {
 	Destroy() error
 }
 
-// Hosters holds all known Hoster
-var Hosters = map[string]Hoster{
+var allHosters = map[string]Hoster{
 	"aws": &aws.Hoster{},
 	"gce": &gce.Hoster{},
 }
@@ -29,14 +28,14 @@ func GuessHoster(name string) (Hoster, error) {
 	var h Hoster
 
 	if name != "" {
-		if host, ok := Hosters[name]; ok {
+		if host, ok := allHosters[name]; ok {
 			return host, nil
 		}
 
 		return nil, errors.New("hoster not supported: " + name)
 	}
 
-	for _, h = range Hosters {
+	for _, h = range allHosters {
 		if h.OnThisHoster() {
 			return h, nil
 		}
