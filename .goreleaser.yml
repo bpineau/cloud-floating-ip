@@ -13,10 +13,6 @@ release:
   # don't autopublish
   draft: true
 
-dockers:
-  -
-    image: bpineau/cloud-floating-ip
-    goos: linux
-    goarch: amd64
-    latest: true
-    dockerfile: Dockerfile.goreleaser
+archive:
+  format: binary
+
