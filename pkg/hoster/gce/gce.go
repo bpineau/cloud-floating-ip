@@ -48,28 +48,22 @@ func (h *Hoster) Init(conf *config.CfiConfig, logger log.Logger) {
 
 	err = h.checkMissingParam()
 	if err != nil {
-		h.log.Fatalf("Missing param: %v\n", err)
+		h.log.Fatalf("Missing parameter: %v\n", err)
 	}
 
-	if h.conf.Project == "" {
-		h.conf.Project, err = metadata.ProjectID()
-		if err != nil {
-			h.log.Fatalf("Failed to guess project id: %v\n", err)
-		}
+	h.conf.Project, err = h.getProject()
+	if err != nil {
+		h.log.Fatalf("Failed to guess project id: %v\n", err)
 	}
 
-	if h.conf.Instance == "" {
-		h.conf.Instance, err = metadata.InstanceName()
-		if err != nil {
-			h.log.Fatalf("Failed to guess instance id: %v", err)
-		}
+	h.conf.Instance, err = h.getInstance()
+	if err != nil {
+		h.log.Fatalf("Failed to guess instance id: %v\n", err)
 	}
 
-	if h.conf.Zone == "" {
-		h.conf.Zone, err = metadata.Zone()
-		if err != nil {
-			h.log.Fatalf("Failed to guess instance zone: %v", err)
-		}
+	h.conf.Zone, err = h.getZone()
+	if err != nil {
+		h.log.Fatalf("Failed to guess instance zone: %v\n", err)
 	}
 
 	h.rname = strings.Replace(routePrefix+h.conf.IP, ".", "-", -1)
@@ -78,29 +72,103 @@ func (h *Hoster) Init(conf *config.CfiConfig, logger log.Logger) {
 
 	h.client, err = google.DefaultClient(*h.ctx, compute.CloudPlatformScope)
 	if err != nil {
-		h.log.Fatalf("Failed to get default client %s", err)
+		h.log.Fatalf("Failed to get default client %s\n", err)
 	}
 
 	h.svc, err = compute.New(h.client)
 	if err != nil {
-		h.log.Fatalf("Failed to instantiate a compute client: %s", err)
+		h.log.Fatalf("Failed to instantiate a compute client: %s\n", err)
 	}
 
-	h.network = h.getNetworkInterface()
+	h.network, err = h.getNetwork()
+	if err != nil {
+		h.log.Fatalf("Failed to collect network infos: %v\n", err)
+	}
 }
 
-func (h *Hoster) getNetworkInterface() string {
+func (h *Hoster) getProject() (string, error) {
+	if h.conf.Project != "" {
+		return h.conf.Project, nil
+	}
+
+	return metadata.ProjectID()
+}
+
+func (h *Hoster) getInstance() (string, error) {
+	if h.conf.Instance != "" {
+		return h.conf.Instance, nil
+	}
+
+	return metadata.InstanceName()
+}
+
+func (h *Hoster) getZone() (string, error) {
+	if h.conf.Zone != "" {
+		return h.conf.Zone, nil
+	}
+
+	return metadata.Zone()
+}
+
+func (h *Hoster) getNetwork() (string, error) {
 	inst, err := h.svc.Instances.Get(h.conf.Project, h.conf.Zone, h.conf.Instance).Context(*h.ctx).Do()
 	if err != nil {
-		h.log.Fatalf("Failed to guess network link: %v", err)
+		return "", fmt.Errorf("Failed to read instance attributes: %v", err)
 	}
 
-	// TODO: support instances with several interfaces
-	if len(inst.NetworkInterfaces) != 1 {
-		h.log.Fatalf("For now, we don't support more than one interface")
+	if len(inst.NetworkInterfaces) < 1 {
+		return "", fmt.Errorf("can't find any interface on instance %s", h.conf.Instance)
 	}
 
-	return inst.NetworkInterfaces[0].Network
+	if len(inst.NetworkInterfaces) != 1 && h.conf.Iface == "" && h.conf.Subnet == "" && h.conf.TargetIP == "" {
+		return "", fmt.Errorf("the instance %s has more than one interface, %s",
+			h.conf.Instance, "please specify an interface, target IP, or subnet ID.")
+	}
+
+	if h.conf.Iface != "" {
+		return h.getNetworkByInterface(h.conf.Iface, inst.NetworkInterfaces)
+	}
+
+	if h.conf.Subnet != "" {
+		return h.getNetworkBySubnet(h.conf.Subnet, inst.NetworkInterfaces)
+	}
+
+	if h.conf.TargetIP != "" {
+		return h.getNetworkByTargetIP(h.conf.TargetIP, inst.NetworkInterfaces)
+	}
+
+	return inst.NetworkInterfaces[0].Network, nil
+}
+
+func (h *Hoster) getNetworkByInterface(name string, ifaces []*compute.NetworkInterface) (string, error) {
+	for _, iface := range ifaces {
+		if iface.Name == name {
+			return iface.Network, nil
+		}
+	}
+
+	return "", fmt.Errorf("can't find an interface named %s", name)
+}
+
+func (h *Hoster) getNetworkBySubnet(name string, ifaces []*compute.NetworkInterface) (string, error) {
+	for _, iface := range ifaces {
+		subnet := strings.Split(iface.Subnetwork, "/")
+		if subnet[len(subnet)-1] == name {
+			return iface.Network, nil
+		}
+	}
+
+	return "", fmt.Errorf("can't find an interface on subnet %s", name)
+}
+
+func (h *Hoster) getNetworkByTargetIP(name string, ifaces []*compute.NetworkInterface) (string, error) {
+	for _, iface := range ifaces {
+		if iface.NetworkIP == name {
+			return iface.Network, nil
+		}
+	}
+
+	return "", fmt.Errorf("can't find an interface with IP %s", name)
 }
 
 // OnThisHoster returns true when we run on an gce instance
@@ -127,7 +195,7 @@ func (h *Hoster) Preempt() error {
 	// There's no "update" or "replace" in GCP routes API.
 	err := h.Destroy()
 	if err != nil {
-		h.log.Fatalf("Failed to delete the route: %v", err)
+		h.log.Fatalf("Failed to delete the route: %v\n", err)
 	}
 
 	h.log.Infof("Creating a route %s to %s via %s on %s network\n",
@@ -139,7 +207,7 @@ func (h *Hoster) Preempt() error {
 
 	err = h.blockingWait(h.svc.Routes.Insert(h.conf.Project, rb).Do())
 	if err != nil {
-		h.log.Fatalf("Failed to create the route: %v", err)
+		h.log.Fatalf("Failed to create the route: %v\n", err)
 	}
 
 	return nil
@@ -160,7 +228,7 @@ func (h *Hoster) Status() bool {
 		}
 	}
 
-	h.log.Fatalf("Failed to get route status: %v", err)
+	h.log.Fatalf("Failed to get route status: %v\n", err)
 
 	return false
 }

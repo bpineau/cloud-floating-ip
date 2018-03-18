@@ -31,6 +31,8 @@ const (
 	rsAbsent routeStatus = iota
 	rsWrongTarget
 	rsCorrectTarget
+
+	inuse = "in-use"
 )
 
 // Init prepare an aws hoster for usage
@@ -39,12 +41,12 @@ func (h *Hoster) Init(conf *config.CfiConfig, logger log.Logger) {
 	h.log = logger
 	err := h.checkMissingParam()
 	if err != nil {
-		h.log.Fatalf("Missing param: %v", err)
+		h.log.Fatalf("Missing param: %v\n", err)
 	}
 
 	h.sess, err = session.NewSession(aws.NewConfig().WithMaxRetries(3))
 	if err != nil {
-		h.log.Fatalf("Failed to initialize an AWS session: %v", err)
+		h.log.Fatalf("Failed to initialize an AWS session: %v\n", err)
 	}
 
 	metadata := ec2metadata.New(h.sess)
@@ -52,7 +54,7 @@ func (h *Hoster) Init(conf *config.CfiConfig, logger log.Logger) {
 	if h.conf.Region == "" {
 		h.conf.Region, err = metadata.Region()
 		if err != nil {
-			h.log.Fatalf("Failed to collect region from instance metadata: %v", err)
+			h.log.Fatalf("Failed to collect region from instance metadata: %v\n", err)
 		}
 	}
 
@@ -61,7 +63,7 @@ func (h *Hoster) Init(conf *config.CfiConfig, logger log.Logger) {
 	if h.conf.Instance == "" {
 		h.conf.Instance, err = metadata.GetMetadata("instance-id")
 		if err != nil {
-			h.log.Fatalf("Failed to collect instanceid from instance metadata: %v", err)
+			h.log.Fatalf("Failed to collect instanceid from instance metadata: %v\n", err)
 		}
 	}
 
@@ -69,24 +71,17 @@ func (h *Hoster) Init(conf *config.CfiConfig, logger log.Logger) {
 
 	err = h.getNetworkInfo()
 	if err != nil {
-		h.log.Fatalf("Failed to collect network infos: %v", err)
+		h.log.Fatalf("Failed to collect network infos: %v\n", err)
 	}
 }
 
 func (h *Hoster) getNetworkInfo() error {
-	instance, err := h.ec2s.DescribeInstances(&ec2.DescribeInstancesInput{
-		InstanceIds: []*string{aws.String(h.conf.Instance)}},
-	)
+
+	eni, err := h.getNetworkInterface()
 	if err != nil {
-		return fmt.Errorf("Failed to DescribeInstances: %v", err)
+		return fmt.Errorf("failed to find the target interface: %v", err)
 	}
 
-	// TODO: support instances with several interfaces
-	if len(instance.Reservations[0].Instances[0].NetworkInterfaces) != 1 {
-		return fmt.Errorf("For now, we don't support more than one interface")
-	}
-
-	eni := instance.Reservations[0].Instances[0].NetworkInterfaces[0]
 	h.enid = eni.NetworkInterfaceId
 	h.vpc = *eni.VpcId
 	h.myip = *eni.PrivateIpAddress
@@ -113,6 +108,96 @@ func (h *Hoster) getNetworkInfo() error {
 	return nil
 }
 
+// find the target ENI/interface ; if we're multihomed (have several external
+// interfaces), we'll filter using the user-provided interface or subnet name.
+func (h *Hoster) getNetworkInterface() (*ec2.InstanceNetworkInterface, error) {
+	instance, err := h.ec2s.DescribeInstances(&ec2.DescribeInstancesInput{
+		InstanceIds: []*string{aws.String(h.conf.Instance)}},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to DescribeInstances: %v", err)
+	}
+
+	ifaces := instance.Reservations[0].Instances[0].NetworkInterfaces
+	if len(ifaces) < 1 {
+		return nil, fmt.Errorf("instance %s doesn't have a network interface",
+			h.conf.Instance)
+	}
+
+	if len(ifaces) != 1 && h.conf.Iface == "" && h.conf.Subnet == "" && h.conf.TargetIP == "" {
+		return nil, fmt.Errorf("the instance %s has more than one interface, %s",
+			h.conf.Instance, "please specify an interface, target IP, or subnet ID.")
+	}
+
+	if h.conf.Iface != "" {
+		return h.getNetworkInterfaceByName(h.conf.Iface, ifaces)
+	}
+
+	if h.conf.Subnet != "" {
+		return h.getNetworkInterfaceBySubnet(h.conf.Subnet, ifaces)
+	}
+
+	if h.conf.TargetIP != "" {
+		return h.getNetworkInterfaceByTargetIP(h.conf.TargetIP, ifaces)
+	}
+
+	return ifaces[0], nil
+}
+
+func (h *Hoster) getNetworkInterfaceByName(name string, ifaces []*ec2.InstanceNetworkInterface) (*ec2.InstanceNetworkInterface, error) {
+	for _, iface := range ifaces {
+		if iface.NetworkInterfaceId == nil || iface.SubnetId == nil || iface.PrivateIpAddress == nil {
+			continue
+		}
+
+		if iface.Status == nil || *iface.Status != inuse {
+			continue
+		}
+
+		if *iface.NetworkInterfaceId == name {
+			return iface, nil
+		}
+	}
+
+	return nil, fmt.Errorf("can't find the interface %s on instance %s", name, h.conf.Instance)
+}
+
+func (h *Hoster) getNetworkInterfaceBySubnet(name string, ifaces []*ec2.InstanceNetworkInterface) (*ec2.InstanceNetworkInterface, error) {
+	for _, iface := range ifaces {
+		if iface.NetworkInterfaceId == nil || iface.SubnetId == nil || iface.PrivateIpAddress == nil {
+			continue
+		}
+
+		if iface.Status == nil || *iface.Status != inuse {
+			continue
+		}
+
+		if *iface.SubnetId == name {
+			return iface, nil
+		}
+	}
+
+	return nil, fmt.Errorf("can't find an interface on subnet %s for instance %s", name, h.conf.Instance)
+}
+
+func (h *Hoster) getNetworkInterfaceByTargetIP(name string, ifaces []*ec2.InstanceNetworkInterface) (*ec2.InstanceNetworkInterface, error) {
+	for _, iface := range ifaces {
+		if iface.NetworkInterfaceId == nil || iface.SubnetId == nil || iface.PrivateIpAddress == nil {
+			continue
+		}
+
+		if iface.Status == nil || *iface.Status != inuse {
+			continue
+		}
+
+		if *iface.PrivateIpAddress == name {
+			return iface, nil
+		}
+	}
+
+	return nil, fmt.Errorf("can't find an interface with IP %s for instance %s", name, h.conf.Instance)
+}
+
 // OnThisHoster returns true when we run on an gce instance
 func (h *Hoster) OnThisHoster() bool {
 	sess, err := session.NewSession(aws.NewConfig().WithMaxRetries(3))
@@ -135,7 +220,6 @@ func (h *Hoster) Preempt() error {
 
 	h.log.Infof("Preempting %s route(s)\n", h.conf.IP)
 
-	// contrary to GCE, an EC2 VPC can have several routes tables
 	for _, table := range h.routes {
 		var err error
 
@@ -155,7 +239,7 @@ func (h *Hoster) Preempt() error {
 		}
 
 		if err != nil {
-			h.log.Fatalf("Failed to create a route: %v", err)
+			h.log.Fatalf("Failed to create a route: %v\n", err)
 		}
 	}
 
