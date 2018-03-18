@@ -100,10 +100,13 @@ func (h *Hoster) getNetworkInfo() error {
 
 	routes, err := h.ec2s.DescribeRouteTables(input)
 	if err != nil {
-		return fmt.Errorf("Failed to DescribeRouteTables: %v", err)
+		return fmt.Errorf("failed to DescribeRouteTables: %v", err)
 	}
 
-	h.routes = routes.RouteTables
+	h.routes = h.filterRouteTables(routes.RouteTables)
+	if len(h.routes) == 0 {
+		return fmt.Errorf("no route table left after filtering")
+	}
 
 	return nil
 }
@@ -223,10 +226,6 @@ func (h *Hoster) Preempt() error {
 	for _, table := range h.routes {
 		var err error
 
-		if h.conf.NoMain && isMainTableAssociated(table) {
-			continue
-		}
-
 		status := isRouteInTable(table, h.cidr, h.enid, h.conf.Instance)
 
 		switch status {
@@ -249,10 +248,6 @@ func (h *Hoster) Preempt() error {
 // Status returns true if the floating IP address route to the instance
 func (h *Hoster) Status() bool {
 	for _, table := range h.routes {
-		if h.conf.NoMain && isMainTableAssociated(table) {
-			continue
-		}
-
 		if isRouteInTable(table, h.cidr, h.enid, h.conf.Instance) != rsCorrectTarget {
 			return false
 		}
@@ -264,10 +259,6 @@ func (h *Hoster) Status() bool {
 // Destroy remove route(s) to the IP from our VPC
 func (h *Hoster) Destroy() error {
 	for _, table := range h.routes {
-		if h.conf.NoMain && isMainTableAssociated(table) {
-			continue
-		}
-
 		status := isRouteInTable(table, h.cidr, h.enid, h.conf.Instance)
 		if status == rsAbsent {
 			continue
@@ -305,15 +296,6 @@ func (h *Hoster) checkMissingParam() error {
 	}
 
 	return nil
-}
-
-func isMainTableAssociated(table *ec2.RouteTable) bool {
-	for _, assoc := range table.Associations {
-		if *assoc.Main {
-			return true
-		}
-	}
-	return false
 }
 
 func isRouteInTable(table *ec2.RouteTable, cidr *string, eni *string, instance string) routeStatus {
@@ -374,4 +356,38 @@ func (h *Hoster) replaceRouteInTable(table *ec2.RouteTable, cidr *string, eni *s
 
 	_, err := h.ec2s.ReplaceRoute(route)
 	return err
+}
+
+// discard tables attached to the main table if --ignore-main-table is specified,
+// and keep only the table(s) specified with --table/-b (h.conf.RouteTables) if any.
+func (h *Hoster) filterRouteTables(tables []*ec2.RouteTable) []*ec2.RouteTable {
+	var rt []*ec2.RouteTable
+	for _, table := range tables {
+		if h.conf.NoMain && isMainTableAssociated(table) {
+			continue
+		}
+
+		if len(h.conf.RouteTables) == 0 {
+			rt = append(rt, table)
+			continue
+		}
+
+		for _, tbl := range h.conf.RouteTables {
+			if table.RouteTableId != nil && *table.RouteTableId == tbl {
+				rt = append(rt, table)
+				break
+			}
+		}
+	}
+
+	return rt
+}
+
+func isMainTableAssociated(table *ec2.RouteTable) bool {
+	for _, assoc := range table.Associations {
+		if *assoc.Main {
+			return true
+		}
+	}
+	return false
 }
