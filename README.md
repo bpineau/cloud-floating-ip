@@ -3,7 +3,7 @@
 Implement a floating/virtual IP by configuring cloud provider's routes.
 
 Choose an arbitrary private IP address, and `cloud-floating-ip` will
-route traffic for that IP to the AWS or GCP instance of your choice.
+configure route for that IP to the AWS or GCP instance of your choice.
 
 ## Instances preparation
 
@@ -11,8 +11,8 @@ To choose a virtual IP: this address must be available, and not used
 elsewhere in the VPC; it doesn't have to be part of an existing subnet range.
 
 All EC2/GCE instances that may become "primary" (carry the floating IP)
-at some point should be allowed by the cloud provider to route traffic
-(`SourceDestCheck` (EC2) or `canIpForward` (GCE) must be enabled).
+at some point should be allowed by the cloud provider to route traffic:
+`SourceDestCheck` (EC2) or `canIpForward` (GCE) must be enabled.
 
 Those instances should be able to accept traffic to the floating IP.
 To that effect, we can assign the virtual IP address to a loopback or
@@ -30,7 +30,7 @@ or /etc/sysconfig/network-scripts/).
 
 ## Usage
 
-To route the floating IP through the current instance:
+To route the floating IP to the current instance:
 ```bash
 # see what would change
 cloud-floating-ip -i 10.200.0.50 preempt --dry-run
@@ -83,9 +83,8 @@ Provide either:
 
 ## Options
 
-The `ip` argument is mandatory. Other settings can be collected from
-instance's metadata (and instance profile or service account) when
-running `cloud-floating-ip` from an AWS or GCE instance.
+The `ip` argument is mandatory. Other settings can be collected from instance's
+metadata when running `cloud-floating-ip` from an AWS or GCE instance.
 
 Those settings can be stored in the `/etc/cloud-floating-ip.yaml`
 configuration file. You can also pass them through environments (upper
