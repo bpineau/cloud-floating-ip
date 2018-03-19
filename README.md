@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/bpineau/cloud-floating-ip.svg?branch=master)](https://travis-ci.org/bpineau/cloud-floating-ip)
+[![Go Report Card](https://goreportcard.com/badge/github.com/bpineau/cloud-floating-ip)](https://goreportcard.com/report/github.com/bpineau/cloud-floating-ip)
+
 # cloud-floating-ip
 
 Implement a floating/virtual IP by configuring cloud provider's routes.
